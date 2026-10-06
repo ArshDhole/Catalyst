@@ -54,8 +54,15 @@ Or everything with Docker: `docker compose up --build` (API + Postgres).
 
 ## Flow
 
-Parse → Plan (AI + offline rule pre-pass) → Execute → Validate (tests) →
-Fix & retry (AI, max 3x). No key → deterministic offline plan.
+Parse → Index (RAG) → Plan (AI + offline rule pre-pass) → Execute → Validate
+(tests) → Fix & retry (AI, max 3x). No key → deterministic offline plan.
+
+RAG: every job chunks the repo (120-line windows) plus curated migration
+knowledge (Python 2→3, modern JS, playbook) into a vector index. Planning and
+retries retrieve top-K relevant chunks instead of a blind 60KB dump — no more
+50-file cap. Embeddings are local hashed-TF-IDF by default ($0, offline);
+set `RAG_EMBEDDING=provider` with an OpenAI/OpenRouter/Gemini key for real
+vectors. `RAG_ENABLED=0` restores the legacy dump.
 
 Supported paths (41 in the UI): Python 2→3 / 3.x→3.y, ES5→ES2020/24, Node 10–14→18/20,
 CJS→ESM (rules + AI); TypeScript, React, Vue, Angular, Rails, Django, Spring,

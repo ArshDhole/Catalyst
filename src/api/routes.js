@@ -134,6 +134,7 @@ router.get('/migration/:id/results', (req, res) => {
     plan: job.plan,
     retries: job.retries ?? 0,
     offline: job.offline ?? false,
+    rag: job.rag || { enabled: false },
     provider: job.providerUsed || job.provider || null,
     model: job.modelUsed || job.model || null,
   });
@@ -242,6 +243,7 @@ async function runMigrationAsync(jobId) {
     changedFiles: result.changedFiles,
     retries: result.retries,
     offline: result.offline,
+    rag: result.rag || { enabled: false },
     providerUsed: result.provider,
     modelUsed: result.model,
   });

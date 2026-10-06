@@ -8,10 +8,12 @@ import { executeChanges, revertChanges, applyTargetRenames } from '../executors/
 import { runTests } from '../validators/testRunner.js';
 import { buildUnifiedDiffs } from '../utils/diff.js';
 import { scoreConfidence } from '../utils/confidence.js';
+import { buildRetriever, planQueries } from '../rag/retriever.js';
 import { cacheGet, cacheSet } from '../utils/cache.js';
 import { logger } from '../utils/logger.js';
 
 const MAX_RETRIES = 3;
+const RAG_ENABLED = !['0', 'false', 'no'].includes((process.env.RAG_ENABLED || '1').toLowerCase());
 
 // Kept for backwards compat (tests / callers). Now means "any provider key".
 export function hasApiKey() {
@@ -84,11 +86,24 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
   progress({ status: 'analyzing', progress: 10 });
   const codebaseAnalysis = await parseCodebase(repoPath, sourceVersion);
 
+  // RAG: index the repo + migration knowledge once per job (local tfidf
+  // by default — works with no API key; set RAG_ENABLED=0 to disable).
+  let retriever = null;
+  let ragStats = { enabled: false };
+  if (RAG_ENABLED) {
+    try {
+      retriever = await buildRetriever(repoPath, pathId);
+      ragStats = { enabled: true, ...retriever.stats };
+    } catch (err) {
+      logger.warn(`RAG index failed (${err.message}) — falling back to full dump`, jobId);
+    }
+  }
+
   progress({ status: 'planning', progress: 30 });
   let migrationPlan;
   if (resolved) {
     const offline = await generateOfflinePlan(repoPath, pathId, sourceVersion, targetVersion).catch(() => null);
-    const aiPlan = await generateMigrationPlan(codebaseAnalysis, sourceVersion, targetVersion, { ...aiOpts });
+    const aiPlan = await generateMigrationPlan(codebaseAnalysis, sourceVersion, targetVersion, { ...aiOpts, retriever });
     migrationPlan = mergePlans(offline, aiPlan);
     migrationPlan.provider = aiPlan.provider;
     migrationPlan.model = aiPlan.model;
@@ -110,7 +125,7 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
     attempt++;
     logger.info(`Tests failed, asking ${resolved.id} to fix (attempt ${attempt}/${MAX_RETRIES})...`, jobId);
     progress({ status: 'validating', progress: 75, retryAttempt: attempt });
-    const fixedPlan = await fixFailedMigration(codebaseAnalysis, migrationPlan, testResults, sourceVersion, targetVersion, aiOpts);
+    const fixedPlan = await fixFailedMigration(codebaseAnalysis, migrationPlan, testResults, sourceVersion, targetVersion, { ...aiOpts, retriever });
     await revertChanges(repoPath, execResults.originalContent);
     execResults = await executeChanges(repoPath, fixedPlan);
     migrationPlan = fixedPlan;
@@ -153,6 +168,7 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
     changedFiles: execResults.changedFiles,
     renames,
     retries: attempt,
+    rag: { ...ragStats, ...(retriever?.lastAsk || {}) },
     offline: !!migrationPlan.offline,
     pathId,
     provider: migrationPlan.provider || resolved?.id || null,
@@ -175,10 +191,28 @@ export async function generateMigrationPlan(codebaseAnalysis, sourceVersion, tar
     cacheSet(cacheKey, plan);
     return plan;
   }
+  // RAG context replaces the blind 60KB dump: retrieved chunks + KB hits.
+  // Falls back to the structure dump when retrieval is disabled/empty.
+  let ragContext = '';
+  let ragUsed = null;
+  if (opts.retriever) {
+    try {
+      const res = await opts.retriever.ask(planQueries(sourceVersion, targetVersion, codebaseAnalysis));
+      ragContext = res.context;
+      ragUsed = res.stats;
+      logger.info(`RAG plan context: ${res.stats.used} chunks, ${res.stats.chars} chars (${res.stats.mode})`);
+    } catch (err) {
+      logger.warn(`RAG retrieval failed (${err.message}) — using structure dump`);
+    }
+  }
+  const codebaseBlock = ragContext || JSON.stringify(codebaseAnalysis, null, 2).slice(0, 60000);
   const userPrompt = `Analyze this codebase and generate a migration plan from ${sourceVersion} to ${targetVersion}.
 
-CODEBASE STRUCTURE:
-${JSON.stringify(codebaseAnalysis, null, 2).slice(0, 60000)}
+CODEBASE CONTEXT (retrieved chunks as file:start-end, plus migration knowledge):
+${codebaseBlock}
+
+REPOSITORY OVERVIEW:
+${JSON.stringify({ totalFiles: codebaseAnalysis.totalFiles, language: codebaseAnalysis.language, dependencies: codebaseAnalysis.dependencies }, null, 2).slice(0, 2000)}
 
 Generate a migration plan JSON with this exact structure:
 {
@@ -218,11 +252,24 @@ Generate a migration plan JSON with this exact structure:
   const plan = parseJsonFromModel(text);
   plan.provider = provider;
   plan.model = model;
+  if (ragUsed) plan.rag = ragUsed;
   cacheSet(cacheKey, plan);
   return plan;
 }
 
 export async function fixFailedMigration(codebaseAnalysis, originalPlan, testResults, sourceVersion, targetVersion, opts = {}) {
+  // Focus the retry on chunks matching the failure output (RAG over the repo).
+  let failureContext = '';
+  if (opts.retriever) {
+    try {
+      const failText = String(testResults.failures || testResults.message || '').slice(0, 2000);
+      const res = await opts.retriever.ask([
+        `code related to test failure: ${failText.slice(0, 500)}`,
+        `migrate ${sourceVersion} to ${targetVersion} fix test failures`,
+      ]);
+      failureContext = `\n\nRETRIEVED CODE RELEVANT TO THE FAILURE:\n${res.context}`;
+    } catch { /* retry works without it */ }
+  }
   const userPrompt = `The migration from ${sourceVersion} to ${targetVersion} failed.
 
 ORIGINAL PLAN:
@@ -232,7 +279,7 @@ TEST FAILURES:
 ${JSON.stringify(testResults.failures || testResults, null, 2).slice(0, 20000)}
 
 CODEBASE:
-${JSON.stringify(codebaseAnalysis, null, 2).slice(0, 30000)}
+${JSON.stringify(codebaseAnalysis, null, 2).slice(0, 20000)}${failureContext}
 
 Generate a corrected migration plan (same JSON structure as before) that fixes these issues. Respond with JSON ONLY.`;
 
