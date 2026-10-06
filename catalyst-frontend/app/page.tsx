@@ -75,7 +75,7 @@ const FALLBACK_PROVIDERS: ProviderInfo[] = [
   { id: 'anthropic', label: 'Anthropic Claude (Opus 4.6)', configured: false, defaultModel: 'claude-opus-4-20250805' },
   { id: 'openai', label: 'OpenAI', configured: false, defaultModel: 'gpt-4o' },
   { id: 'gemini', label: 'Google Gemini', configured: false, defaultModel: 'gemini-2.0-flash' },
-  { id: 'openrouter', label: 'OpenRouter', configured: false, defaultModel: 'anthropic/claude-opus-4-6' },
+  { id: 'openrouter', label: 'OpenRouter', configured: false, defaultModel: 'anthropic/claude-opus-4.6' },
   { id: 'zen', label: 'OpenCode Zen', configured: false, defaultModel: 'big-pickle' },
   { id: 'custom', label: 'Custom (OpenAI-compatible)', configured: false, defaultModel: 'default' },
 ];

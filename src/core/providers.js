@@ -46,9 +46,13 @@ export const PROVIDERS = {
     label: 'OpenRouter',
     keyEnvs: ['OPENROUTER_API_KEY'],
     modelEnvs: ['OPENROUTER_MODEL', 'MODEL'],
-    defaultModel: 'anthropic/claude-opus-4-6',
+    defaultModel: 'anthropic/claude-opus-4.6',
     protocol: 'openai-chat',
     baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    // OpenRouter IDs are always namespaced ("vendor/model") — catch
+    // Claude-native IDs (claude-opus-4-20250805) leaking in via MODEL.
+    modelPattern: /^[^/\s]+\/[^/\s]+$/,
+    modelExample: 'anthropic/claude-opus-4.6',
   },
   zen: {
     label: 'OpenCode Zen',
@@ -132,11 +136,20 @@ export function resolveProvider(requested, requestedModel, keyOverride) {
     const cfg = getProviderConfig(want, override);
     if (!cfg.apiKey) throw new Error(`Provider "${want}" selected but no API key found (expected ${cfg.keyEnvs.join(' or ')}).`);
     if (!cfg.baseUrl) throw new Error(`Provider "custom" needs CUSTOM_BASE_URL set.`);
-    return { ...cfg, model: (requestedModel || '').trim() || cfg.model };
+    const model = (requestedModel || '').trim() || cfg.model;
+    if (cfg.modelPattern && !cfg.modelPattern.test(model)) {
+      throw new Error(`Model "${model}" doesn't look like an ${cfg.label} ID (expected "${cfg.modelExample}").`);
+    }
+    return { ...cfg, model };
   }
   for (const id of AUTO_PRIORITY) {
     const cfg = getProviderConfig(id);
-    if (cfg.configured) return { ...cfg, model: (requestedModel || '').trim() || cfg.model };
+    if (!cfg.configured) continue;
+    const model = (requestedModel || '').trim() || cfg.model;
+    if (cfg.modelPattern && !cfg.modelPattern.test(model)) {
+      throw new Error(`Model "${model}" doesn't look like an ${cfg.label} ID (expected "${cfg.modelExample}"). Check MODEL / ${cfg.modelEnvs[0]}.`);
+    }
+    return { ...cfg, model };
   }
   throw new Error(
     'No AI API key configured. Set one of: ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, ZEN_API_KEY (or CUSTOM_BASE_URL + CUSTOM_API_KEY). Offline rule-based mode still works for Python 2→3 / ES5→ES2020.'

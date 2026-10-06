@@ -104,6 +104,28 @@ describe('providers', () => {
     assert.throws(() => resolveProvider('auto', '', 'sk-override'), /Pick a provider/);
   });
 
+  it('rejects non-namespaced model IDs for OpenRouter locally', () => {
+    clearKeys();
+    assert.throws(
+      () => resolveProvider('openrouter', 'claude-opus-4-20250805', 'sk-or-test'),
+      /doesn't look like an OpenRouter ID/
+    );
+    const ok = resolveProvider('openrouter', 'anthropic/claude-opus-4.6', 'sk-or-test');
+    assert.equal(ok.model, 'anthropic/claude-opus-4.6');
+  });
+
+  it('provider-specific model env beats generic MODEL', () => {
+    clearKeys();
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.MODEL = 'generic-model';
+    process.env.OPENAI_MODEL = 'gpt-4o-mini';
+    const r = resolveProvider('openai');
+    assert.equal(r.model, 'gpt-4o-mini');
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.MODEL;
+    delete process.env.OPENAI_MODEL;
+  });
+
   it('complete() sends the override key, not the env key', async () => {
     clearKeys();
     process.env.OPENAI_API_KEY = 'sk-env';
