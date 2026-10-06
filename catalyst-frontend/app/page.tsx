@@ -584,7 +584,11 @@ function JobView({ job, onReset }: { job: MigrationJob; onReset: () => void }) {
                 <div className="mt-5 font-mono text-[12px] text-soot space-y-1.5 border-t border-hairline pt-4">
                   <p><span className="text-faded">engine&nbsp;&nbsp;</span>{job.offline ? 'offline rules' : `${job.provider} / ${job.model || 'default'}`}</p>
                   {job.rag?.enabled && (
-                    <p><span className="text-faded">rag&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>{job.rag.chunks} chunks → {job.rag.used} used · {job.rag.mode}</p>
+                    <p><span className="text-faded">rag&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                      {job.rag.chunks} {job.rag.chunks === 1 ? 'chunk' : 'chunks'} indexed
+                      {typeof job.rag.used === 'number' ? ` → ${job.rag.used} used` : ' · not queried (offline rules)'}
+                      {` · ${job.rag.mode}`}
+                    </p>
                   )}
                   {typeof job.retries === 'number' && job.retries > 0 && (
                     <p><span className="text-faded">retries&nbsp;</span>{job.retries} auto-fix{job.retries === 1 ? '' : 'es'}</p>
