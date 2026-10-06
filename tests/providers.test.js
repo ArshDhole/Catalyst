@@ -153,4 +153,38 @@ describe('providers', () => {
     assert.equal(keyShapeHint('openrouter', 'sk-or-v1-abc'), '');
     assert.equal(keyShapeHint('zen', 'anything'), '');
   });
+
+  it('402 on token budget retries with halved max_tokens', async () => {
+    clearKeys();
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const seen = [];
+    let calls = 0;
+    const stub = async (url, opts) => {
+      calls++;
+      seen.push(JSON.parse(opts.body).max_tokens);
+      if (calls === 1) {
+        return { ok: false, status: 402, text: async () => 'can only afford 1550, requested max_tokens 8000' };
+      }
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }) };
+    };
+    const out = await complete({ system: 's', user: 'u', provider: 'openai', maxTokens: 8000, fetchImpl: stub });
+    assert.equal(out.text, '{"a":1}');
+    assert.deepEqual(seen, [8000, 4000]);
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it('persistent 402 explains remedies', async () => {
+    clearKeys();
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const stub = async () => ({ ok: false, status: 402, text: async () => 'requires more credits, max_tokens too high' });
+    await assert.rejects(
+      complete({ system: 's', user: 'u', provider: 'openai', maxTokens: 2000, fetchImpl: stub }),
+      (err) => {
+        assert.ok(err.message.includes('402'));
+        assert.ok(err.message.includes(':free') && err.message.includes('MAX_TOKENS') && err.message.includes('offline'));
+        return true;
+      }
+    );
+    delete process.env.OPENAI_API_KEY;
+  });
 });

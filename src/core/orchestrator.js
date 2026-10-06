@@ -14,6 +14,8 @@ import { logger } from '../utils/logger.js';
 
 const MAX_RETRIES = 3;
 const RAG_ENABLED = !['0', 'false', 'no'].includes((process.env.RAG_ENABLED || '1').toLowerCase());
+// Output budget per AI call (OpenRouter 402s auto-shrink this further at runtime)
+const MAX_TOKENS = Math.max(1000, parseInt(process.env.MAX_TOKENS || '8000', 10) || 8000);
 
 // Kept for backwards compat (tests / callers). Now means "any provider key".
 export function hasApiKey() {
@@ -244,7 +246,7 @@ Generate a migration plan JSON with this exact structure:
   const { text, provider, model } = await complete({
     system: CATALYST_SYSTEM_PROMPT,
     user: userPrompt,
-    maxTokens: 8000,
+    maxTokens: MAX_TOKENS,
     provider: opts.provider,
     model: opts.model,
     apiKey: opts.apiKey,
@@ -287,7 +289,7 @@ Generate a corrected migration plan (same JSON structure as before) that fixes t
   const { text, provider, model } = await complete({
     system: 'You are a debugging expert. The code migration failed tests. Analyze the failures and generate a corrected migration plan. Respond ONLY with valid JSON, no markdown.',
     user: userPrompt,
-    maxTokens: 8000,
+    maxTokens: MAX_TOKENS,
     provider: opts.provider,
     model: opts.model,
     apiKey: opts.apiKey,

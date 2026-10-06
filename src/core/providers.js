@@ -178,13 +178,38 @@ export function hasAnyKey() {
 /**
  * Universal completion. Returns plain text (JSON expected by callers).
  * Throws with provider + status context on failure.
+ * On 402/insufficient-credits mentioning token budget, automatically retries
+ * with a halved max_tokens (floor 1000) so low balances still get a plan.
  */
 export async function complete({ system, user, maxTokens = 8000, temperature = 0.2, provider, model, apiKey, fetchImpl }) {
   const cfg = resolveProvider(provider, model, apiKey);
   const fetchFn = fetchImpl || fetch;
-  if (cfg.protocol === 'anthropic-messages') return completeAnthropic(cfg, { system, user, maxTokens, temperature }, fetchFn);
-  if (cfg.protocol === 'gemini') return completeGemini(cfg, { system, user, maxTokens, temperature }, fetchFn);
-  return completeOpenAIChat(cfg, { system, user, maxTokens, temperature }, fetchFn);
+  const dispatch = (budget) => {
+    if (cfg.protocol === 'anthropic-messages') return completeAnthropic(cfg, { system, user, maxTokens: budget, temperature }, fetchFn);
+    if (cfg.protocol === 'gemini') return completeGemini(cfg, { system, user, maxTokens: budget, temperature }, fetchFn);
+    return completeOpenAIChat(cfg, { system, user, maxTokens: budget, temperature }, fetchFn);
+  };
+  let budget = maxTokens;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await dispatch(budget);
+    } catch (err) {
+      const msg = err.message || '';
+      const broke = /\b402\b/.test(msg) && /max_tokens|tokens|credit/i.test(msg);
+      if (broke && budget > 1000 && attempt < 2) {
+        budget = Math.max(1000, Math.floor(budget / 2));
+        continue;
+      }
+      if (/\b402\b/.test(msg)) {
+        throw new Error(
+          `${msg} — balance too low even at max_tokens=${budget}. ` +
+          `Add credits, pick a free model (OpenRouter IDs ending in ":free"), ` +
+          `set MAX_TOKENS lower (e.g. 1500), or run offline with no key.`
+        );
+      }
+      throw err;
+    }
+  }
 }
 
 async function completeAnthropic(cfg, { system, user, maxTokens, temperature }, fetchFn) {
