@@ -148,3 +148,26 @@ async function flattenTopLevel(destDir) {
     }
   } catch { /* best effort */ }
 }
+
+/**
+ * Download filename that reflects the migration, not a random id.
+ * Single upload "test.zip" py2→py3  →  "test-python3.zip"
+ * Folder/multi uploads            →  "catalyst-python2-to-python3.zip"
+ */
+export function buildDownloadName(job = {}) {
+  const target = slug(job.targetVersion) || 'migrated';
+  const single = job.originalName && !/^\d+ files$/.test(job.originalName)
+    ? slug(stripArchiveExt(path.basename(job.originalName)))
+    : '';
+  if (single) return `${`${single}-${target}`.slice(0, 80)}.zip`;
+  const stem = `catalyst-${slug(job.sourceVersion) || 'repo'}-to-${target}`;
+  return `${stem.slice(0, 80)}.zip`;
+}
+
+function stripArchiveExt(name) {
+  return name.replace(/(\.tar\.gz|\.tgz|\.zip|\.rar|\.tar|\.[A-Za-z0-9]{1,5})$/i, '');
+}
+
+function slug(s = '') {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}

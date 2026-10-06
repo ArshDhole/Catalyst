@@ -82,11 +82,17 @@ describe('Catalyst API (offline, no key)', () => {
     assert.equal(results.offline, true);
     assert.ok(Array.isArray(results.diffs) && results.diffs.length >= 1);
     assert.ok(results.diffs[0].patch.includes('print('));
+    assert.ok(results.confidence > 0.9, `confidence too low: ${results.confidence}`);
+    assert.ok(results.confidenceBreakdown, 'missing confidence breakdown');
 
     const dl = await fetch(`${BASE}/api/migration/${start.jobId}/download`);
     assert.equal(dl.status, 200);
     assert.ok(dl.headers.get('content-type').includes('zip'));
     assert.ok((await dl.arrayBuffer()).byteLength > 100);
+    assert.ok(
+      (dl.headers.get('content-disposition') || '').includes('repo-python3.zip'),
+      `bad download name: ${dl.headers.get('content-disposition')}`
+    );
 
     const del = await (await fetch(`${BASE}/api/migration/${start.jobId}`, { method: 'DELETE' })).json();
     assert.equal(del.deleted, start.jobId);

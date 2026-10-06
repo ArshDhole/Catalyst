@@ -28,14 +28,17 @@ export async function executeChanges(repoPath, migrationPlan) {
 
   for (const [filePath, fileChanges] of Object.entries(changesByFile)) {
     const fullPath = path.join(repoPath, filePath);
+    const attempted = fileChanges.filter(
+      (c) => typeof c.old === 'string' && typeof c.new === 'string' && c.old !== ''
+    ).length;
     if (!(await fs.pathExists(fullPath))) {
       logger.warn(`Skipping missing file: ${filePath}`);
-      changes.push({ file: filePath, changeCount: 0, status: 'skipped-missing' });
+      changes.push({ file: filePath, changeCount: 0, attempted, status: 'skipped-missing' });
       continue;
     }
     const stat = await fs.stat(fullPath);
     if (stat.isDirectory()) {
-      changes.push({ file: filePath, changeCount: 0, status: 'skipped-directory' });
+      changes.push({ file: filePath, changeCount: 0, attempted, status: 'skipped-directory' });
       continue;
     }
 
@@ -59,8 +62,11 @@ export async function executeChanges(repoPath, migrationPlan) {
     if (modified !== original) {
       await fs.writeFile(fullPath, modified, 'utf8');
     }
-    changes.push({ file: filePath, changeCount: applied, status: applied > 0 ? 'applied' : 'no-op' });
+    changes.push({ file: filePath, changeCount: applied, attempted, status: applied > 0 ? 'applied' : 'no-op' });
   }
+
+  const attemptedTotal = changes.reduce((n, c) => n + (c.attempted || 0), 0);
+  const appliedTotal = changes.reduce((n, c) => n + (c.changeCount || 0), 0);
 
   return {
     changedFiles: Object.keys(changesByFile).filter((f) =>
@@ -68,6 +74,8 @@ export async function executeChanges(repoPath, migrationPlan) {
     ),
     changes,
     originalContent,
+    attempted: attemptedTotal,
+    applied: appliedTotal,
   };
 }
 

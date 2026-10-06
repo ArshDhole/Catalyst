@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { runMigration } from '../core/orchestrator.js';
 import { listProviders, PROVIDERS } from '../core/providers.js';
 import { saveMigration } from '../utils/db.js';
-import { materializeUpload, isAllowedUpload, uploadAcceptHint, MAX_FILES } from '../utils/uploads.js';
+import { materializeUpload, isAllowedUpload, uploadAcceptHint, buildDownloadName, MAX_FILES } from '../utils/uploads.js';
 import { logger } from '../utils/logger.js';
 
 export const migrationJobs = new Map();
@@ -128,6 +128,7 @@ router.get('/migration/:id/results', (req, res) => {
     diffs: job.diffs,
     testResults: job.testResults,
     confidence: job.confidence,
+    confidenceBreakdown: job.confidenceBreakdown || null,
     changedFiles: job.changedFiles,
     plan: job.plan,
     retries: job.retries ?? 0,
@@ -149,7 +150,7 @@ router.get('/migration/:id/download', async (req, res) => {
     zip.addLocalFolder(job.extractPath);
     const buf = zip.toBuffer();
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="catalyst-${job.id}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${buildDownloadName(job)}"`);
     res.send(buf);
   } catch (err) {
     logger.error(`Download failed: ${err.message}`, job.id);
@@ -235,6 +236,7 @@ async function runMigrationAsync(jobId) {
     diffs: result.diffs,
     testResults: result.testResults,
     confidence: result.confidence,
+    confidenceBreakdown: result.confidenceBreakdown,
     changedFiles: result.changedFiles,
     retries: result.retries,
     offline: result.offline,

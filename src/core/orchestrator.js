@@ -7,6 +7,7 @@ import { complete, hasAnyKey, resolveProvider } from './providers.js';
 import { executeChanges, revertChanges } from '../executors/codeExecutor.js';
 import { runTests } from '../validators/testRunner.js';
 import { buildUnifiedDiffs } from '../utils/diff.js';
+import { scoreConfidence } from '../utils/confidence.js';
 import { cacheGet, cacheSet } from '../utils/cache.js';
 import { logger } from '../utils/logger.js';
 
@@ -121,13 +122,21 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
   const migratedContent = await readMigratedContent(repoPath, execResults.originalContent);
   const diffs = buildUnifiedDiffs(execResults.originalContent, migratedContent);
 
+  const { score: confidence, breakdown: confidenceBreakdown } = scoreConfidence({
+    planConfidence: migrationPlan.confidence ?? 0.8,
+    attempted: execResults.attempted || 0,
+    applied: execResults.applied || 0,
+    testsPassed: testResults.passed,
+  });
+
   return {
     status: 'completed',
     plan: migrationPlan,
     results: { changedFiles: execResults.changedFiles, changes: execResults.changes },
     diffs,
     testResults,
-    confidence: migrationPlan.confidence ?? 0.8,
+    confidence,
+    confidenceBreakdown,
     changedFiles: execResults.changedFiles,
     retries: attempt,
     offline: !!migrationPlan.offline,

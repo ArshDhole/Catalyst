@@ -88,6 +88,7 @@ interface MigrationJob {
   progress: number;
   error?: string;
   confidence?: number;
+  confidenceBreakdown?: { plan: number; application: number; tests: number };
   diffs?: FileDiff[];
   testResults?: { passed?: boolean; framework?: string; message?: string };
   changedFiles?: string[];
@@ -573,6 +574,11 @@ function JobView({ job, onReset }: { job: MigrationJob; onReset: () => void }) {
                     <span key={i} className={`h-2.5 flex-1 rounded-sm ${i < Math.round(conf / 10) ? 'bg-ember' : 'bg-parchment'}`} />
                   ))}
                 </div>
+                {job.confidenceBreakdown && (
+                  <p className="font-mono text-[11px] text-faded mt-2">
+                    plan {Math.round(job.confidenceBreakdown.plan * 100)} · applied {Math.round(job.confidenceBreakdown.application * 100)} · tests {Math.round(job.confidenceBreakdown.tests * 100)}
+                  </p>
+                )}
                 <div className="mt-5 font-mono text-[12px] text-soot space-y-1.5 border-t border-hairline pt-4">
                   <p><span className="text-faded">engine&nbsp;&nbsp;</span>{job.offline ? 'offline rules' : `${job.provider} / ${job.model || 'default'}`}</p>
                   {typeof job.retries === 'number' && job.retries > 0 && (
