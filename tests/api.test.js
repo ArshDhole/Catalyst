@@ -98,6 +98,27 @@ describe('Catalyst API (offline, no key)', () => {
     assert.equal(del.deleted, start.jobId);
   }, { timeout: 90000 });
 
+  it('renames versioned filenames end to end (legacy.python2 → legacy.python3)', async () => {
+    const { default: AdmZip } = await import('adm-zip');
+    const zip = new AdmZip();
+    zip.addFile('legacy.python2', Buffer.from('print "Hello"\n'));
+    const fd = new FormData();
+    fd.append('sourceVersion', 'python2');
+    fd.append('targetVersion', 'python3');
+    fd.append('repo', new Blob([zip.toBuffer()], { type: 'application/zip' }), 'test.zip');
+    const start = await (await fetch(`${BASE}/api/migrate`, { method: 'POST', body: fd })).json();
+    const job = await pollJob(start.jobId);
+    assert.equal(job.status, 'completed', `job failed: ${job.error}`);
+    const results = await (await fetch(`${BASE}/api/migration/${start.jobId}/results`)).json();
+    assert.equal(results.renames.length, 1);
+    assert.ok(results.renames[0].to.replace(/\\/g, '/').endsWith('legacy.python3'));
+    assert.ok(results.changedFiles.some((f) => f.replace(/\\/g, '/').endsWith('legacy.python3')));
+    assert.ok(results.diffs.some((d) => d.file.replace(/\\/g, '/').endsWith('legacy.python3')));
+    const dl = await fetch(`${BASE}/api/migration/${start.jobId}/download`);
+    assert.ok((dl.headers.get('content-disposition') || '').includes('test-python3.zip'));
+    await fetch(`${BASE}/api/migration/${start.jobId}`, { method: 'DELETE' });
+  }, { timeout: 90000 });
+
   async function pollJob(jobId, timeoutS = 40) {
     for (let i = 0; i < timeoutS; i++) {
       await new Promise((r) => setTimeout(r, 1000));

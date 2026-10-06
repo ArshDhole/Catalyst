@@ -89,6 +89,7 @@ interface MigrationJob {
   error?: string;
   confidence?: number;
   confidenceBreakdown?: { plan: number; application: number; tests: number };
+  renames?: { from: string; to: string }[];
   diffs?: FileDiff[];
   testResults?: { passed?: boolean; framework?: string; message?: string };
   changedFiles?: string[];
@@ -567,11 +568,11 @@ function JobView({ job, onReset }: { job: MigrationJob; onReset: () => void }) {
               <div className="mt-6">
                 <div className="flex items-end justify-between">
                   <p className="font-display font-bold text-lg">Confidence</p>
-                  <p className="font-display font-bold text-4xl tabular">{conf}<span className="text-lg text-faded">%</span></p>
+                  <p className={`font-display font-bold text-4xl tabular ${conf >= 90 ? 'text-moss' : conf >= 70 ? 'text-ember' : 'text-red-600'}`}>{conf}<span className="text-lg text-faded">%</span></p>
                 </div>
                 <div className="flex gap-1 mt-3">
                   {Array.from({ length: 10 }).map((_, i) => (
-                    <span key={i} className={`h-2.5 flex-1 rounded-sm ${i < Math.round(conf / 10) ? 'bg-ember' : 'bg-parchment'}`} />
+                    <span key={i} className={`h-2.5 flex-1 rounded-sm ${i < Math.round(conf / 10) ? (conf >= 90 ? 'bg-moss' : conf >= 70 ? 'bg-ember' : 'bg-red-500') : 'bg-parchment'}`} />
                   ))}
                 </div>
                 {job.confidenceBreakdown && (
@@ -591,7 +592,10 @@ function JobView({ job, onReset }: { job: MigrationJob; onReset: () => void }) {
                     <div>
                       <p className="text-faded">files&nbsp;&nbsp;&nbsp;{job.changedFiles.length} changed</p>
                       <ul className="mt-1 space-y-0.5">
-                        {job.changedFiles.map((f) => <li key={f} className="truncate">· {f}</li>)}
+                        {job.changedFiles.map((f) => {
+                          const ren = (job.renames || []).find((r) => r.to === f || r.to.endsWith('/' + f) || r.to.endsWith('\\' + f));
+                          return <li key={f} className="truncate">· {ren ? `${ren.from} → ${ren.to}` : f}</li>;
+                        })}
                       </ul>
                     </div>
                   )}

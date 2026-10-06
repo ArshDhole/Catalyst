@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { applyRules, rulesForPath, fileMatchesPath } from './migrationRules.js';
+import { renameForTarget } from '../executors/codeExecutor.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -12,7 +13,10 @@ export async function generateOfflinePlan(repoPath, pathId, sourceVersion, targe
   const rules = rulesForPath(pathId);
   const { getAllFiles } = await import('./codeParser.js');
   const allFiles = await getAllFiles(repoPath, repoPath);
-  const candidates = allFiles.filter((f) => fileMatchesPath(f, pathId)).slice(0, 50);
+  // Extension match OR version token in the name (legacy.python2 IS python code)
+  const candidates = allFiles.filter(
+    (f) => fileMatchesPath(f, pathId) || renameForTarget(path.basename(f), sourceVersion, targetVersion)
+  ).slice(0, 50);
 
   const changes = [];
   for (const file of candidates) {

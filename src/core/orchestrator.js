@@ -4,7 +4,7 @@ import { parseCodebase } from '../parsers/codeParser.js';
 import { generateOfflinePlan } from '../parsers/pythonParser.js';
 import { resolvePathId } from '../parsers/migrationRules.js';
 import { complete, hasAnyKey, resolveProvider } from './providers.js';
-import { executeChanges, revertChanges } from '../executors/codeExecutor.js';
+import { executeChanges, revertChanges, applyTargetRenames } from '../executors/codeExecutor.js';
 import { runTests } from '../validators/testRunner.js';
 import { buildUnifiedDiffs } from '../utils/diff.js';
 import { scoreConfidence } from '../utils/confidence.js';
@@ -119,6 +119,19 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
 
   progress({ status: 'completed', progress: 100 });
 
+  // Rename files that reference the source version (test.python2 → test.python3)
+  const { renames } = await applyTargetRenames(repoPath, sourceVersion, targetVersion).catch((err) => {
+    logger.warn(`Renames skipped: ${err.message}`, jobId);
+    return { renames: [] };
+  });
+  const renameMap = new Map(renames.map((r) => [path.normalize(r.from), r.to]));
+  const remappedOriginal = {};
+  for (const [k, v] of Object.entries(execResults.originalContent || {})) {
+    remappedOriginal[renameMap.get(path.normalize(k)) || k] = v;
+  }
+  execResults.originalContent = remappedOriginal;
+  execResults.changedFiles = execResults.changedFiles.map((f) => renameMap.get(path.normalize(f)) || f);
+
   const migratedContent = await readMigratedContent(repoPath, execResults.originalContent);
   const diffs = buildUnifiedDiffs(execResults.originalContent, migratedContent);
 
@@ -138,6 +151,7 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
     confidence,
     confidenceBreakdown,
     changedFiles: execResults.changedFiles,
+    renames,
     retries: attempt,
     offline: !!migrationPlan.offline,
     pathId,
