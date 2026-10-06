@@ -92,7 +92,7 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
   let ragStats = { enabled: false };
   if (RAG_ENABLED) {
     try {
-      retriever = await buildRetriever(repoPath, pathId);
+      retriever = await buildRetriever(repoPath, pathId, { sourceVersion, targetVersion });
       ragStats = { enabled: true, ...retriever.stats };
     } catch (err) {
       logger.warn(`RAG index failed (${err.message}) — falling back to full dump`, jobId);

@@ -60,9 +60,10 @@ async function loadKnowledge(pathId) {
  * Build repo + knowledge indexes once per job, then answer queries.
  * Returns { ask(queries, topK), stats } — ask() merges repo + KB hits.
  */
-export async function buildRetriever(repoPath, pathId, embedOpts = {}) {
+export async function buildRetriever(repoPath, pathId, opts = {}) {
+  const { sourceVersion, targetVersion, ...embedOpts } = opts;
   const [repoChunks, kbChunks] = await Promise.all([
-    chunkRepo(repoPath),
+    chunkRepo(repoPath, { sourceVersion, targetVersion }),
     loadKnowledge(pathId),
   ]);
   const [repoIdx, kbIdx] = await Promise.all([

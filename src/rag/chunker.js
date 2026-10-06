@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { getAllFiles, isCodeFile } from '../parsers/codeParser.js';
+import { renameForTarget } from '../executors/codeExecutor.js';
 
 export const DEFAULT_CHUNK_LINES = 120;
 export const DEFAULT_OVERLAP_LINES = 20;
@@ -32,11 +33,14 @@ export function chunkText(text, file, { chunkLines = DEFAULT_CHUNK_LINES, overla
   return chunks;
 }
 
-export async function chunkRepo(repoPath, { chunkLines, overlap } = {}) {
+export async function chunkRepo(repoPath, { chunkLines, overlap, sourceVersion, targetVersion } = {}) {
   const allFiles = await getAllFiles(repoPath, repoPath);
   const chunks = [];
   for (const rel of allFiles) {
-    if (!isCodeFile(rel)) continue;
+    // Extension match OR version token in the name (legacy.python2 IS code)
+    const versioned = sourceVersion && targetVersion &&
+      renameForTarget(path.basename(rel), sourceVersion, targetVersion);
+    if (!isCodeFile(rel) && !versioned) continue;
     const abs = path.join(repoPath, rel);
     try {
       const stat = await fs.stat(abs);
