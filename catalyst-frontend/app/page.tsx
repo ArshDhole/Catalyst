@@ -154,7 +154,10 @@ export default function Catalyst() {
     axios.get(`${API_BASE}/api/health`).then(() => setApiOnline(true)).catch(() => setApiOnline(false));
     axios.get(`${API_BASE}/api/providers`).then((r) => {
       if (Array.isArray(r.data.providers) && r.data.providers.length > 0) setProviders(r.data.providers);
-      if (r.data.envDefault) setProvider(r.data.envDefault);
+      // Only adopt the server default if the user hasn't picked (late response must not clobber)
+      if (r.data.envDefault && r.data.envDefault !== 'auto') {
+        setProvider((prev) => (prev === 'auto' ? r.data.envDefault : prev));
+      }
     }).catch(() => {});
   }, []);
 
@@ -486,7 +489,12 @@ export default function Catalyst() {
                 <input
                   type={showKey ? 'text' : 'password'}
                   value={apiKey}
-                  onChange={(e) => { setApiKey(e.target.value); persistKey(e.target.value, rememberKey); }}
+                  onChange={(e) => {
+                    // Strip invisible paste junk (zero-width spaces, NBSP) gateways reject
+                    const v = e.target.value.replace(/[\s\u200B-\u200F\uFEFF\u00A0]/g, '');
+                    setApiKey(v);
+                    persistKey(v, rememberKey);
+                  }}
                   placeholder={provider === 'auto' ? 'select a provider ↑' : 'paste key — this run only'}
                   disabled={provider === 'auto'}
                   autoComplete="off"

@@ -7,7 +7,7 @@ import AdmZip from 'adm-zip';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { runMigration } from '../core/orchestrator.js';
-import { listProviders, PROVIDERS } from '../core/providers.js';
+import { listProviders, PROVIDERS, cleanKey, keyShapeHint } from '../core/providers.js';
 import { saveMigration } from '../utils/db.js';
 import { materializeUpload, isAllowedUpload, uploadAcceptHint, buildDownloadName, MAX_FILES } from '../utils/uploads.js';
 import { logger } from '../utils/logger.js';
@@ -100,13 +100,15 @@ router.post('/migrate', migrateLimiter, upload.array('repo', MAX_FILES), async (
     });
 
     // Fire-and-forget async migration
-    if (apiKey) jobKeys.set(jobId, apiKey.trim());
+    if (apiKey) jobKeys.set(jobId, cleanKey(apiKey));
     runMigrationAsync(jobId).catch((err) => {
       const job = migrationJobs.get(jobId);
       if (job) {
+        const hadKey = jobKeys.has(jobId);
+        const hint = hadKey ? keyShapeHint(job.provider, jobKeys.get(jobId)) : '';
         job.status = 'failed';
-        job.error = err.message;
-        logger.error(`Migration failed: ${err.message}`, jobId);
+        job.error = err.message + hint;
+        logger.error(`Migration failed: ${err.message}${hint}`, jobId);
         saveMigration(job).catch(() => {});
       }
       jobKeys.delete(jobId);

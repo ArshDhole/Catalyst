@@ -74,15 +74,40 @@ const AUTO_PRIORITY = ['anthropic', 'openrouter', 'openai', 'gemini', 'zen', 'cu
 function firstSet(envNames) {
   for (const n of envNames) {
     const v = process.env[n];
-    if (v && v.trim() && !v.includes('your-') && !v.includes('here')) return v.trim();
+    if (v && v.trim() && !v.includes('your-') && !v.includes('here')) return cleanKey(v);
   }
   return null;
+}
+
+/**
+ * Keys pasted from dashboards/docs often carry invisible junk
+ * (zero-width spaces, NBSP, stray whitespace) that trim() keeps.
+ * Gateways then reject the key as missing/malformed — strip it all.
+ */
+export function cleanKey(key) {
+  return String(key || '').replace(/[\s\u200B-\u200F\uFEFF\u00A0]/g, '');
+}
+
+const KEY_PREFIX_HINTS = {
+  anthropic: 'sk-ant-',
+  openai: 'sk-',
+  openrouter: 'sk-or-',
+  gemini: 'AIza',
+};
+
+/** Non-blocking hint when a key doesn't look like it belongs to the provider. No key material. */
+export function keyShapeHint(providerId, key) {
+  const prefix = KEY_PREFIX_HINTS[providerId];
+  if (!prefix || !key) return '';
+  return cleanKey(key).startsWith(prefix)
+    ? ''
+    : ` (hint: ${providerId} keys usually start with "${prefix}" — check for paste errors)`;
 }
 
 export function getProviderConfig(id, keyOverride) {
   const def = PROVIDERS[id];
   if (!def) throw new Error(`Unknown AI provider "${id}". Valid: ${Object.keys(PROVIDERS).join(', ')}`);
-  const override = (keyOverride || '').trim();
+  const override = cleanKey(keyOverride);
   const apiKey = override || firstSet(def.keyEnvs);
   let baseUrl = def.baseUrl;
   if (id === 'custom') baseUrl = (process.env.CUSTOM_BASE_URL || '').trim() || null;
@@ -99,7 +124,7 @@ export function getProviderConfig(id, keyOverride) {
  */
 export function resolveProvider(requested, requestedModel, keyOverride) {
   const want = (requested || process.env.AI_PROVIDER || 'auto').toLowerCase().trim();
-  const override = (keyOverride || '').trim();
+  const override = cleanKey(keyOverride);
   if (override && want === 'auto') {
     throw new Error('Pick a provider to use with a request-supplied API key (auto + key is ambiguous).');
   }

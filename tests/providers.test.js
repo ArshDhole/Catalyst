@@ -116,4 +116,19 @@ describe('providers', () => {
     assert.equal(seen, 'Bearer sk-override');
     delete process.env.OPENAI_API_KEY;
   });
+
+  it('cleanKey strips invisible paste junk gateways reject', async () => {
+    const { cleanKey, keyShapeHint } = await import('../src/core/providers.js');
+    assert.equal(cleanKey('  sk-or-v1-abc\u200B\u00A0\n'), 'sk-or-v1-abc');
+    assert.equal(cleanKey(''), '');
+  });
+
+  it('keyShapeHint flags wrong-shaped keys without leaking', async () => {
+    const { keyShapeHint } = await import('../src/core/providers.js');
+    const hint = keyShapeHint('openrouter', 'sk-bogus');
+    assert.ok(hint.includes('sk-or-'));
+    assert.ok(!hint.includes('sk-bogus'));
+    assert.equal(keyShapeHint('openrouter', 'sk-or-v1-abc'), '');
+    assert.equal(keyShapeHint('zen', 'anything'), '');
+  });
 });
