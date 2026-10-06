@@ -141,6 +141,9 @@ export default function Catalyst() {
   const [selectedTo, setSelectedTo] = useState('python3');
   const [provider, setProvider] = useState('auto');
   const [model, setModel] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [rememberKey, setRememberKey] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const [providers, setProviders] = useState<ProviderInfo[]>(FALLBACK_PROVIDERS);
   const [apiOnline, setApiOnline] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -154,6 +157,23 @@ export default function Catalyst() {
       if (r.data.envDefault) setProvider(r.data.envDefault);
     }).catch(() => {});
   }, []);
+
+  // BYOK keys live in the browser only (this device if remembered, else this tab).
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(`catalyst-key-${provider}`) || sessionStorage.getItem(`catalyst-key-${provider}`) || '';
+      setApiKey(v);
+      setRememberKey(!!localStorage.getItem(`catalyst-key-${provider}`));
+    } catch { /* private mode */ }
+  }, [provider]);
+
+  const persistKey = (v: string, remember: boolean) => {
+    try {
+      localStorage.removeItem(`catalyst-key-${provider}`);
+      sessionStorage.removeItem(`catalyst-key-${provider}`);
+      if (v) (remember ? localStorage : sessionStorage).setItem(`catalyst-key-${provider}`, v);
+    } catch { /* private mode */ }
+  };
 
   const selectedProvider = providers.find((p) => p.id === provider);
   const configuredCount = providers.filter((p) => p.configured).length;
@@ -208,6 +228,7 @@ export default function Catalyst() {
     formData.append('migrationPath', `${selectedFrom}-to-${selectedTo}`);
     formData.append('provider', provider);
     if (model.trim()) formData.append('model', model.trim());
+    if (apiKey.trim()) formData.append('apiKey', apiKey.trim());
 
     try {
       const response = await axios.post(`${API_BASE}/api/migrate`, formData, {
@@ -457,6 +478,41 @@ export default function Catalyst() {
               {provider === 'zen' && (
                 <p className="font-mono text-[11px] text-white/40 mt-2">zen → chat/completions models only (e.g. big-pickle)</p>
               )}
+
+              <label className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/50 mt-5 mb-2 block">
+                {provider === 'auto' ? 'API key (pick a provider first)' : `${selectedProvider?.label || provider} key`}
+              </label>
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => { setApiKey(e.target.value); persistKey(e.target.value, rememberKey); }}
+                  placeholder={provider === 'auto' ? 'select a provider ↑' : 'paste key — this run only'}
+                  disabled={provider === 'auto'}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2.5 pr-14 text-sm font-mono placeholder:text-white/30 focus:outline-none focus:border-ember disabled:opacity-40"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[11px] text-white/50 hover:text-white px-1"
+                >
+                  {showKey ? 'hide' : 'show'}
+                </button>
+              </div>
+              <label className="flex items-center gap-2 mt-2 font-mono text-[11px] text-white/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberKey}
+                  onChange={(e) => { setRememberKey(e.target.checked); persistKey(apiKey, e.target.checked); }}
+                  className="accent-[#E4571D]"
+                />
+                remember on this device
+              </label>
+              <p className="font-mono text-[11px] text-white/40 mt-2">
+                key lives in your browser + server memory for this run — never saved server-side
+              </p>
 
               <div className="mt-6 border-t border-white/10 pt-5 font-mono text-[12px] text-white/70 space-y-1.5">
                 <p><span className="text-white/40">from</span> {selectedFrom}</p>

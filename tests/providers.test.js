@@ -80,4 +80,40 @@ describe('providers', () => {
     );
     delete process.env.OPENAI_API_KEY;
   });
+
+  it('request key override works with no env key configured', () => {
+    clearKeys();
+    const r = resolveProvider('openai', 'gpt-4o-mini', 'sk-override-123');
+    assert.equal(r.id, 'openai');
+    assert.equal(r.model, 'gpt-4o-mini');
+    assert.equal(r.apiKey, 'sk-override-123');
+    assert.equal(r.configured, true);
+  });
+
+  it('override beats env key', () => {
+    clearKeys();
+    process.env.OPENAI_API_KEY = 'sk-env';
+    const r = resolveProvider('openai', '', 'sk-override');
+    assert.equal(r.apiKey, 'sk-override');
+    assert.equal(r.fromRequest, true);
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it('auto + request key is rejected as ambiguous', () => {
+    clearKeys();
+    assert.throws(() => resolveProvider('auto', '', 'sk-override'), /Pick a provider/);
+  });
+
+  it('complete() sends the override key, not the env key', async () => {
+    clearKeys();
+    process.env.OPENAI_API_KEY = 'sk-env';
+    let seen;
+    const stub = async (url, opts) => {
+      seen = opts.headers.authorization;
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }) };
+    };
+    await complete({ system: 's', user: 'u', provider: 'openai', apiKey: 'sk-override', fetchImpl: stub });
+    assert.equal(seen, 'Bearer sk-override');
+    delete process.env.OPENAI_API_KEY;
+  });
 });

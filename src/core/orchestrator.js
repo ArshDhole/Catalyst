@@ -73,9 +73,9 @@ Always respond with valid JSON ONLY. No markdown. No explanations outside JSON.
 export async function runMigration(repoPath, sourceVersion, targetVersion, jobId, onProgress, opts = {}) {
   const migrationPath = opts.migrationPath || resolvePathId(sourceVersion, targetVersion, opts.migrationPath);
   const pathId = resolvePathId(sourceVersion, targetVersion, migrationPath);
-  const aiOpts = { provider: opts.provider, model: opts.model };
+  const aiOpts = { provider: opts.provider, model: opts.model, apiKey: opts.apiKey };
   let resolved = null;
-  try { resolved = resolveProvider(aiOpts.provider, aiOpts.model); } catch { resolved = null; }
+  try { resolved = resolveProvider(aiOpts.provider, aiOpts.model, aiOpts.apiKey); } catch { resolved = null; }
   logger.info(
     `Starting migration: ${sourceVersion} → ${targetVersion} [${pathId}]` +
     (resolved ? ` via ${resolved.id}/${resolved.model}` : ' (offline)'),
@@ -92,7 +92,7 @@ export async function runMigration(repoPath, sourceVersion, targetVersion, jobId
   let ragStats = { enabled: false };
   if (RAG_ENABLED) {
     try {
-      retriever = await buildRetriever(repoPath, pathId, { sourceVersion, targetVersion });
+      retriever = await buildRetriever(repoPath, pathId, { sourceVersion, targetVersion, apiKey: aiOpts.apiKey });
       ragStats = { enabled: true, ...retriever.stats };
     } catch (err) {
       logger.warn(`RAG index failed (${err.message}) — falling back to full dump`, jobId);
@@ -184,7 +184,7 @@ export async function generateMigrationPlan(codebaseAnalysis, sourceVersion, tar
   if (cached) return cached;
 
   let resolved = null;
-  try { resolved = resolveProvider(opts.provider, opts.model); } catch { resolved = null; }
+  try { resolved = resolveProvider(opts.provider, opts.model, opts.apiKey); } catch { resolved = null; }
   if (!resolved) {
     if (!opts.repoPath) throw new Error('No AI API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, ZEN_API_KEY, or CUSTOM_API_KEY.');
     const plan = await generateOfflinePlan(opts.repoPath, opts.pathId || resolvePathId(sourceVersion, targetVersion), sourceVersion, targetVersion);
@@ -247,6 +247,7 @@ Generate a migration plan JSON with this exact structure:
     maxTokens: 8000,
     provider: opts.provider,
     model: opts.model,
+    apiKey: opts.apiKey,
   });
 
   const plan = parseJsonFromModel(text);
@@ -289,6 +290,7 @@ Generate a corrected migration plan (same JSON structure as before) that fixes t
     maxTokens: 8000,
     provider: opts.provider,
     model: opts.model,
+    apiKey: opts.apiKey,
   });
 
   const fixed = parseJsonFromModel(text);

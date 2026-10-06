@@ -43,6 +43,37 @@ describe('Catalyst API (offline, no key)', () => {
     assert.ok(!JSON.stringify(p).includes('sk-'));
   });
 
+  it('rejects auto provider with a request key (ambiguous)', async () => {
+    const fd = new FormData();
+    fd.append('sourceVersion', 'python2');
+    fd.append('targetVersion', 'python3');
+    fd.append('provider', 'auto');
+    fd.append('apiKey', 'sk-test-123');
+    fd.append('repo', new Blob(['print "x"\n']), 'main.py');
+    const r = await fetch(`${BASE}/api/migrate`, { method: 'POST', body: fd });
+    assert.equal(r.status, 400);
+  });
+
+  it('accepts a per-request key and never leaks it', async () => {
+    const fd = new FormData();
+    fd.append('sourceVersion', 'python2');
+    fd.append('targetVersion', 'python3');
+    fd.append('provider', 'openai');
+    fd.append('apiKey', 'sk-bogus-key-for-leak-test');
+    fd.append('repo', new Blob(['print "x"\n']), 'main.py');
+    const start = await (await fetch(`${BASE}/api/migrate`, { method: 'POST', body: fd })).json();
+    assert.ok(start.jobId);
+    // Key is accepted; bogus key fails at the provider (or offline network) — never offline.
+    const job = await pollJob(start.jobId, 60);
+    assert.equal(job.status, 'failed');
+    assert.equal(job.byok, true);
+    assert.ok(!JSON.stringify(job).includes('sk-bogus-key-for-leak-test'), 'key leaked in status');
+    const res = await fetch(`${BASE}/api/migration/${start.jobId}/results`);
+    const body = await res.text();
+    assert.ok(!body.includes('sk-bogus-key-for-leak-test'), 'key leaked in results');
+    await fetch(`${BASE}/api/migration/${start.jobId}`, { method: 'DELETE' });
+  }, { timeout: 90000 });
+
   it('rejects bad upload type with clean 400', async () => {
     const fd = new FormData();
     fd.append('sourceVersion', 'python2');

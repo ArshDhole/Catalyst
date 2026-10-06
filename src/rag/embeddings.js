@@ -61,7 +61,7 @@ export async function embed(texts, opts = {}) {
   if (sel.mode === 'provider' && !sel.provider) sel = { mode: 'tfidf' }; // no key → local
   if (sel.mode === 'provider') {
     try {
-      return await embedViaProvider(texts, sel.provider, opts.fetchImpl);
+      return await embedViaProvider(texts, sel.provider, opts.fetchImpl, opts.apiKey);
     } catch (err) {
       logger.warn(`Provider embeddings failed (${err.message}) — falling back to local tfidf`);
       return { vectors: tfidfEmbed(texts), mode: 'tfidf', model: 'hashed-tfidf-512' };
@@ -70,14 +70,14 @@ export async function embed(texts, opts = {}) {
   return { vectors: tfidfEmbed(texts), mode: 'tfidf', model: 'hashed-tfidf-512' };
 }
 
-async function embedViaProvider(texts, providerId, fetchImpl = fetch) {
+async function embedViaProvider(texts, providerId, fetchImpl = fetch, keyOverride) {
   const arr = (Array.isArray(texts) ? texts : [texts]).map(String);
-  if (providerId === 'gemini') return embedGemini(arr, fetchImpl);
-  return embedOpenAICompat(arr, providerId, fetchImpl);
+  if (providerId === 'gemini') return embedGemini(arr, fetchImpl, keyOverride);
+  return embedOpenAICompat(arr, providerId, fetchImpl, keyOverride);
 }
 
-function openAIEmbedConfig(providerId) {
-  const cfg = getProviderConfig(providerId);
+function openAIEmbedConfig(providerId, keyOverride) {
+  const cfg = getProviderConfig(providerId, keyOverride);
   const model =
     process.env[`${providerId.toUpperCase()}_EMBED_MODEL`] ||
     (providerId === 'openai' ? 'text-embedding-3-small' : cfg.model);
@@ -91,8 +91,8 @@ function openAIEmbedConfig(providerId) {
   return { url, headers, model, provider: providerId };
 }
 
-async function embedOpenAICompat(arr, providerId, fetchFn) {
-  const { url, headers, model } = openAIEmbedConfig(providerId);
+async function embedOpenAICompat(arr, providerId, fetchFn, keyOverride) {
+  const { url, headers, model } = openAIEmbedConfig(providerId, keyOverride);
   const vectors = [];
   for (let i = 0; i < arr.length; i += 100) {
     const batch = arr.slice(i, i + 100);
@@ -112,8 +112,8 @@ async function embedOpenAICompat(arr, providerId, fetchFn) {
   return { vectors, mode: 'provider', model, provider: providerId };
 }
 
-async function embedGemini(arr, fetchFn) {
-  const cfg = getProviderConfig('gemini');
+async function embedGemini(arr, fetchFn, keyOverride) {
+  const cfg = getProviderConfig('gemini', keyOverride);
   const model = process.env.GEMINI_EMBED_MODEL || 'text-embedding-004';
   const vectors = [];
   for (const text of arr) {

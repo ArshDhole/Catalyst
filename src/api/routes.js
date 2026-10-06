@@ -13,6 +13,8 @@ import { materializeUpload, isAllowedUpload, uploadAcceptHint, buildDownloadName
 import { logger } from '../utils/logger.js';
 
 export const migrationJobs = new Map();
+// Per-request BYOK keys: memory only, never on the job record, deleted at finish.
+export const jobKeys = new Map();
 const JOB_TTL_MS = 2 * 60 * 60 * 1000; // 2h
 
 const upload = multer({
@@ -44,6 +46,8 @@ const migrateSchema = z.object({
   model: z.string().max(200).optional(),
   // Parallel to files[]: webkit relative paths (multer keeps basename only)
   relpath: z.union([z.string().max(500), z.array(z.string().max(500)).max(MAX_FILES)]).optional(),
+  // Bring-your-own-key: used for this run only, never stored or returned
+  apiKey: z.string().max(500).optional(),
 });
 
 const router = Router();
@@ -64,9 +68,14 @@ router.post('/migrate', migrateLimiter, upload.array('repo', MAX_FILES), async (
       await cleanupStaged();
       return res.status(400).json({ error: 'Invalid parameters', details: parsed.error.flatten().fieldErrors });
     }
-    const { sourceVersion, targetVersion, migrationPath, provider, model, relpath } = parsed.data;
+    const { sourceVersion, targetVersion, migrationPath, provider, model, relpath, apiKey } = parsed.data;
     if (staged.length === 0) {
       return res.status(400).json({ error: 'Missing repo files (field name: repo)' });
+    }
+    const effectiveProvider = (provider || process.env.AI_PROVIDER || 'auto').toLowerCase();
+    if (apiKey && effectiveProvider === 'auto') {
+      await cleanupStaged();
+      return res.status(400).json({ error: 'Pick a provider to use with a request-supplied API key (auto + key is ambiguous).' });
     }
     const relArr = Array.isArray(relpath) ? relpath : (typeof relpath === 'string' ? [relpath] : []);
     const stagedNames = staged.map((f, i) => relArr[i] || f.originalname);
@@ -79,8 +88,9 @@ router.post('/migrate', migrateLimiter, upload.array('repo', MAX_FILES), async (
       sourceVersion,
       targetVersion,
       migrationPath: migrationPath || `${sourceVersion}-to-${targetVersion}`,
-      provider: (provider || process.env.AI_PROVIDER || 'auto').toLowerCase(),
+      provider: effectiveProvider,
       model: (model || '').trim() || null,
+      byok: !!apiKey, // key present, value kept in jobKeys only
       uploadPath: staged.length === 1 ? staged[0].path : null, // multi-file jobs stage straight to extract dir
       stagedPaths: staged.map((f) => f.path),
       stagedNames,
@@ -90,6 +100,7 @@ router.post('/migrate', migrateLimiter, upload.array('repo', MAX_FILES), async (
     });
 
     // Fire-and-forget async migration
+    if (apiKey) jobKeys.set(jobId, apiKey.trim());
     runMigrationAsync(jobId).catch((err) => {
       const job = migrationJobs.get(jobId);
       if (job) {
@@ -98,6 +109,7 @@ router.post('/migrate', migrateLimiter, upload.array('repo', MAX_FILES), async (
         logger.error(`Migration failed: ${err.message}`, jobId);
         saveMigration(job).catch(() => {});
       }
+      jobKeys.delete(jobId);
     });
 
     res.json({ jobId, status: 'queued' });
@@ -182,6 +194,7 @@ async function cleanupJob(job) {
   if (job.uploadPath) await fs.remove(job.uploadPath).catch(() => {});
   for (const p of job.stagedPaths || []) await fs.remove(p).catch(() => {});
   if (job.extractPath) await fs.remove(job.extractPath).catch(() => {});
+  jobKeys.delete(job.id);
 }
 
 // Expire old jobs + their files every 10 min
@@ -221,14 +234,16 @@ async function runMigrationAsync(jobId) {
   logger.info(`Staged ${job.originalName} → ${extractPath} (${layout.mode}, ${layout.fileCount} files)`, jobId);
 
   // 2. Run orchestrator (it pushes analyzing/planning/executing/validating/completed)
+  const apiKey = jobKeys.get(jobId) || null;
   const result = await runMigration(
     extractPath,
     job.sourceVersion,
     job.targetVersion,
     jobId,
     (patch) => update(patch),
-    { migrationPath: job.migrationPath, provider: job.provider, model: job.model }
+    { migrationPath: job.migrationPath, provider: job.provider, model: job.model, apiKey }
   );
+  jobKeys.delete(jobId); // key served its run — never persisted
 
   update({
     status: 'completed',

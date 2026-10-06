@@ -34,6 +34,10 @@ Or everything with Docker: `docker compose up --build` (API + Postgres).
 
 - `AI_PROVIDER=auto` (default) uses the first configured key; or force one per request.
 - `MODEL=` overrides the model for whichever provider resolves.
+- **No `.env` editing required:** paste a key into the UI's key field and it
+  applies to that run only — kept in browser storage (if you tick remember)
+  and server memory, never written to disk or returned by any endpoint.
+  A key needs an explicit provider selected (auto + key is rejected as ambiguous).
 - Zen note: use a `chat/completions` model (`big-pickle`, `kimi-k3`, `glm-5`…);
   `/responses`-only models (`gpt-*`, `muse-spark-*`) are not supported by this layer.
 - `GET /api/providers` shows what's configured (keys never leak).

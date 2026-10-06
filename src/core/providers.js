@@ -79,22 +79,32 @@ function firstSet(envNames) {
   return null;
 }
 
-export function getProviderConfig(id) {
+export function getProviderConfig(id, keyOverride) {
   const def = PROVIDERS[id];
   if (!def) throw new Error(`Unknown AI provider "${id}". Valid: ${Object.keys(PROVIDERS).join(', ')}`);
-  const apiKey = firstSet(def.keyEnvs);
+  const override = (keyOverride || '').trim();
+  const apiKey = override || firstSet(def.keyEnvs);
   let baseUrl = def.baseUrl;
   if (id === 'custom') baseUrl = (process.env.CUSTOM_BASE_URL || '').trim() || null;
   if (id === 'openai' && (process.env.OPENAI_BASE_URL || '').trim()) baseUrl = process.env.OPENAI_BASE_URL.trim();
   const model = firstSet(def.modelEnvs) || def.defaultModel;
-  return { id, ...def, apiKey, model, baseUrl, configured: !!apiKey && !!baseUrl };
+  return { id, ...def, apiKey, model, baseUrl, configured: !!apiKey && !!baseUrl, fromRequest: !!override };
 }
 
-/** Resolve which provider+model to use. Explicit request > AI_PROVIDER env > auto-detect. */
-export function resolveProvider(requested, requestedModel) {
+/**
+ * Resolve which provider+model to use.
+ * Precedence: explicit request > AI_PROVIDER env > auto-detect.
+ * A per-request key (BYOK from the UI) overrides env keys — but requires
+ * an explicit provider, since a bare key can't be attributed in auto mode.
+ */
+export function resolveProvider(requested, requestedModel, keyOverride) {
   const want = (requested || process.env.AI_PROVIDER || 'auto').toLowerCase().trim();
+  const override = (keyOverride || '').trim();
+  if (override && want === 'auto') {
+    throw new Error('Pick a provider to use with a request-supplied API key (auto + key is ambiguous).');
+  }
   if (want !== 'auto') {
-    const cfg = getProviderConfig(want);
+    const cfg = getProviderConfig(want, override);
     if (!cfg.apiKey) throw new Error(`Provider "${want}" selected but no API key found (expected ${cfg.keyEnvs.join(' or ')}).`);
     if (!cfg.baseUrl) throw new Error(`Provider "custom" needs CUSTOM_BASE_URL set.`);
     return { ...cfg, model: (requestedModel || '').trim() || cfg.model };
@@ -131,8 +141,8 @@ export function hasAnyKey() {
  * Universal completion. Returns plain text (JSON expected by callers).
  * Throws with provider + status context on failure.
  */
-export async function complete({ system, user, maxTokens = 8000, temperature = 0.2, provider, model, fetchImpl }) {
-  const cfg = resolveProvider(provider, model);
+export async function complete({ system, user, maxTokens = 8000, temperature = 0.2, provider, model, apiKey, fetchImpl }) {
+  const cfg = resolveProvider(provider, model, apiKey);
   const fetchFn = fetchImpl || fetch;
   if (cfg.protocol === 'anthropic-messages') return completeAnthropic(cfg, { system, user, maxTokens, temperature }, fetchFn);
   if (cfg.protocol === 'gemini') return completeGemini(cfg, { system, user, maxTokens, temperature }, fetchFn);
