@@ -1,0 +1,47 @@
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Catalyst editorial details */
+::selection {
+  background: #e4571d;
+  color: #fff;
+}
+
+.blueprint-grid {
+  background-image:
+    linear-gradient(to right, rgba(22, 19, 14, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(22, 19, 14, 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.caret-blink {
+  animation: caret-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  to { visibility: hidden; }
+}
+
+.tick-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.tick-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tick-scroll::-webkit-scrollbar-thumb {
+  background: #d8d1c1;
+  border-radius: 8px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
